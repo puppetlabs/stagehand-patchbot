@@ -55,7 +55,7 @@ metadata; same parameters and same JSON output shape either way.
 | `console_url` | `Optional[String[1]]` | — | Server-injected; unused by the patch itself (posture reaches the console via the fact, not the task's own output). |
 | `ingest_token` | `Optional[String[1]]` | — | Server-injected; unused by the patch itself. |
 | `security_only` | `Boolean` | `false` | Apply only security updates when true; otherwise apply all available updates. Ignored when `patch_ids` is set. |
-| `patch_ids` | `Optional[Array[String[1]]]` | — | Install only these specific ids, as reported in the fact's `patches[]` array (KB numbers on Windows, package names on Linux). Takes priority over `security_only`. |
+| `patch_ids` | `Optional[Array[String[1]]]` | — | Install only these specific ids, as reported in the fact (KB numbers from `missing[].kbs` on Windows, package names from `packages[].name` on Linux). Takes priority over `security_only`. |
 | `reboot` | `Boolean` | `false` | Reboot the node afterward if a reboot is required. |
 
 On Linux, `patch_ids` requires `jq` on the target (only when actually used —
@@ -64,39 +64,64 @@ every other path stays dependency-light). On Windows, no extra dependency:
 
 ## The `patchbot` fact schema
 
+This module publishes **schema version 2** of the `patchbot` fact: the same keys, and the same reboot rule, as the fact the
+console's own `stagehand` module ships. The full contract (every key and every reboot reason code) is kept with the Puppet Stagehand Console's own documentation, which
+this repository does not link to. A fact without `schema_version` is version 1.
+
+A Linux fact (dnf):
+
 ```json
 {
   "patchbot": {
-    "available": 4,
+    "schema_version": 2,
+    "status": "ok",
+    "available": 3,
     "security": 1,
     "reboot_required": false,
-    "last_checked": "2026-08-18T14:03:00Z",
-    "patches": [
-      { "id": "KB5031354", "severity": "high", "security": true },
-      { "id": "openssl", "severity": "high", "security": true },
-      { "id": "some-lib.x86_64", "severity": "unknown", "security": false }
-    ]
+    "reboot_status": "not_required",
+    "reboot_status_reason": "needs_restarting",
+    "last_checked": "2026-11-17T14:03:00Z",
+    "manager": "dnf",
+    "repos": ["appstream", "baseos"],
+    "packages": [
+      { "name": "openssl", "arch": "x86_64", "current": "1:3.2.2-2.el9", "available": "1:3.2.2-6.el9_5", "repo": "rhel-9-appstream", "security": true }
+    ],
+    "package_count": 3,
+    "truncated": false
   }
 }
 ```
 
 | Field | Type | Meaning |
 |---|---|---|
-| `available` | integer | Count of packages/updates with an available update. |
-| `security` | integer | Subset of `available` that are security updates. |
-| `reboot_required` | boolean | Whether a pending reboot has been flagged (`/var/run/reboot-required` or `needs-restarting -r` on Linux; the WUA `SystemInfo.RebootRequired` property on Windows). |
+| `schema_version` | integer | Always `2`. |
+| `available` | integer | Count of packages/updates with an available update. Exact even when the list is capped. |
+| `security` | integer | How many pending updates have a security advisory. An update is counted once even when several advisories or builds name it, and it is matched by exact package name, so `security` is never more than `available`. |
+| `reboot_status` | enum | `required`, `not_required` or `unknown`. `unknown` means this node cannot tell (the tool that reports it is missing or failed, or no supported package manager is present). It is never reported as `not_required`. |
+| `reboot_status_reason` | string | A fixed code saying why (for example `marker_present`, `needs_restarting`, `plugin_missing`, `no_package_manager`; `pending_reboot_probe`, `probes_clear`, `probes_failed` on Windows). Never raw command output. |
+| `reboot_required` | boolean | Kept for readers of version 1: true only when `reboot_status` is `required`. |
 | `last_checked` | string | ISO 8601 UTC timestamp of the last time this fact ran. |
-| `patches[].id` | string | The identifier this entry round-trips into the task's `patch_ids` parameter. KB number (`KB5031354`) on Windows; bare package name (or `name.arch` on RHEL-family) on Linux. |
-| `patches[].severity` | enum | `low` \| `medium` \| `high` \| `unknown` — the same severity scale `compliance.v1` uses. On Windows this is MSRC's rating (Critical/Important collapse to `high`, Moderate → `medium`, Low → `low`). On Linux it's an approximation: `high` if the package manager's security channel flags the update, `unknown` otherwise — Linux package managers don't expose per-package severity as cleanly as WUA does. |
-| `patches[].security` | boolean | Whether this update is classified as a security update. |
+| `manager` | string | `apt`, `dnf`, `yum` or `wua`; empty on a Linux node with no supported package manager. |
+| `repos` | array | Linux: the configured suites or repository ids. |
+| `packages[]` | array | Linux: `name`, `arch`, `current` (installed version), `available`, `repo`, `security`. Capped (see below). |
+| `package_count`, `truncated` | integer, boolean | The full count, and whether the list above was cut at the cap. |
+| `status`, `check_error` | string | dnf only: `ok`, or `check_failed` with a fixed `check_error` (`metadata_unavailable`, `package_manager_error`) when the update check could not run. |
+| `os_build`, `installed_kbs`, `missing[]`, `source`, `wsus_server`, `cve_ids_populated`, `scan_error` | various | Windows: the build, the installed KBs, the missing updates (`kbs`, `title`, `severity`, `cve_ids`, `reboot`), and where the scan looked. |
+| `cache_age_seconds`, `cache_stale` | integer, boolean | Windows: always `0` and `false` here, because this module's Windows fact scans live and has no cache. |
 
-**Deliberately no `title` field** — the fact is stored in PuppetDB and
-re-sent every agent run, and `patches[]` can run to dozens of entries on a
-stale node. The console resolves human-readable display text from `id`
-itself rather than paying that cost in every fact upload.
+The package list is capped (`PCM_PATCH_MAX_PACKAGES`, default 500) because the fact is stored in PuppetDB and re-sent every agent
+run. Only the detail list is capped; the counts stay exact and `truncated` says so.
 
-Structured JSON output requires Facter 4, which ships with Puppet 8 —
+The `patches[]` array of version 1 is no longer emitted. The console still falls back to it for a node that has not yet received
+this module's new facts.
+
+Structured JSON output requires Facter 4, which ships with Puppet 8 --
 OpenVox, Puppet Core, and PE all qualify.
+
+## Tests
+
+The fact is tested together with its development copy in the Puppet Stagehand Console repository. This repository's CI runs the
+task tests, rspec-puppet and Pester.
 
 ## Files
 
