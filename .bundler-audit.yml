@@ -1,0 +1,14 @@
+---
+# bundler-audit waivers. Each entry is a dev/test-only gem that is not
+# shipped in the module (the module ships shell and PowerShell facts and a
+# Bolt task) and that cannot be upgraded while an upstream pin holds it.
+# Revisit each entry when the named pin moves; remove it once the
+# resolved version clears the advisory.
+ignore:
+  # minitar 0.12.1: path traversal on Windows with a crafted tarball.
+  # Held below 1.0 by bolt (~> 0.6), r10k (~> 0.9) and puppet_forge (< 1.0),
+  # all pulled in by puppet_litmus for acceptance tests. Waived 2026-11-18.
+  - GHSA-r6vf-943r-2wvw
+  # mcp 0.25.0: OAuth discovery SSRF. Pulled in by rubocop (mcp ~> 0.6) for
+  # its optional MCP server, which lint never starts. Waived 2026-11-18.
+  - GHSA-4m5j-jjfc-97gx

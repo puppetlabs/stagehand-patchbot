@@ -10,7 +10,7 @@
 
 ### Tasks
 
-* [`patch`](#patch): Apply available OS updates (all, security-only, or a specific set of patch_ids) on a node, optionally reboot when required, then refresh the 
+* [`patch`](#patch): Apply available OS updates (all, security-only, or a specific set of patch_ids) on a node, optionally reboot when required, then refresh the
 
 ## Classes
 
@@ -38,7 +38,7 @@ refresh, and facts.d/patchbot.ps1 queries WUA live on every fact run.
 
 #### Examples
 
-##### 
+#####
 
 ```puppet
 include patchbot
@@ -107,4 +107,3 @@ Install only these specific patch/package ids, as reported in the patchbot fact'
 Data type: `Boolean`
 
 Reboot the node afterward if a reboot is required.
-
