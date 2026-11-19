@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.3.1 (unreleased)
+
+- **Fixed: `Obsoleting Packages` rows were counted as pending updates on yum (and on dnf when the replaced row had a dot).**
+  `yum -q check-update` and `dnf -q check-update` print an `Obsoleting Packages` section after the real updates; its rows are
+  replacements, not updates. The yum filter kept every row of three or more fields, so both the replacing package and the
+  indented replaced package were counted: `available` and `package_count` were too high, both rows appeared in
+  `packages[]`, and `security` could include them. The dnf filter dropped only the header, so the
+  indented replaced row still got through. Both branches now stop reading at the `Obsoleting Packages` header.
+- `facts.d/patchbot.sh` is again a byte-identical copy of the development copy kept in the Puppet Stagehand Console repository.
+  sha256: `patchbot.sh` `73fa520357f3e1857ae6fb30534c8876141b9fcf602e96c2a542efd2a49f94cd`. `facts.d/patchbot.ps1` is unchanged from
+  0.3.0.
+
 ## [0.3.0] - 2026-11-18
 
 0.2.0 was never tagged or released, and 0.3.0 is the first release that carries it: everything under 0.2.0 below ships in 0.3.0
