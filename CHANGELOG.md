@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.3.1 (unreleased)
+
+- **Fixed: `Obsoleting Packages` rows were counted as pending updates on yum (and on dnf when the replaced row had a dot).**
+  `yum -q check-update` and `dnf -q check-update` print an `Obsoleting Packages` section after the real updates; its rows are
+  replacements, not updates. The yum filter kept every row of three or more fields, so both the replacing package and the
+  indented replaced package were counted: `available` and `package_count` were too high, both rows appeared in
+  `packages[]`, and `security` could include them. The dnf filter dropped only the header, so the
+  indented replaced row still got through. Both branches now stop reading at the `Obsoleting Packages` header.
+- **Correction to the 0.3.0 notes: the Windows fact changed shape, and the "keeps working" statement below does not hold for
+  Windows readers.** The 0.3.0 entry says a version 1 reader keeps working and that everything else is additive. That is true
+  of the Linux fact. On Windows, `facts.d/patchbot.ps1` no longer emits the `patches[]` array (`{"id","severity","security"}`)
+  that 0.2.0 and earlier emitted. Anything that read `patches[]` on Windows nodes (PuppetDB queries, third-party reporting)
+  must move to `missing[]`:
+  - `patches[]` is replaced by `missing[]`, one entry per missing update with `kbs` (an array of KB numbers), `title`,
+    `severity` (the raw MSRC severity string, or null; no longer folded into low/medium/high/unknown), `cve_ids` and
+    `reboot`. An update with no KB has an empty `kbs` array; it is no longer keyed by its Windows Update GUID.
+  - `os_build` (four-part build, for example `10.0.20348.3328`) and `installed_kbs` (sorted array of installed KB numbers) are
+    added, along with `source`, `wsus_server`, `cve_ids_populated` and `scan_error`.
+  - `cache_age_seconds` (always `0`) and `cache_stale` (always `false`) are added. The Windows fact scans the Windows Update
+    Agent live on every run, as it did before; there is no cache to age.
+  - `security` on Windows is now the number of missing updates whose MSRC severity is set and not `Unspecified`, counted over the
+    whole scan. It used to also count any update in the `Security Updates` category.
+  - `reboot_required` is now derived from the four reboot probes, not from the Windows Update `SystemInfo.RebootRequired` flag.
+- `facts.d/patchbot.sh` is again a byte-identical copy of the development copy kept in the Puppet Stagehand Console repository.
+  sha256: `patchbot.sh` `73fa520357f3e1857ae6fb30534c8876141b9fcf602e96c2a542efd2a49f94cd`. `facts.d/patchbot.ps1` is unchanged from
+  0.3.0.
+
 ## [0.3.0] - 2026-11-18
 
 0.2.0 was never tagged or released, and 0.3.0 is the first release that carries it: everything under 0.2.0 below ships in 0.3.0
@@ -52,6 +79,8 @@ too.
   boolean survives.
 - The Windows fact (`facts.d/patchbot.ps1`) is unaffected — it keeps its own
   legacy `patches[]`-shaped KB-entry array.
+  (Superseded in 0.3.0: the Windows fact no longer emits `patches[]`. See the
+  0.3.1 notes above for the replacement `missing[]` shape.)
 
 ## [0.1.0] - 2026-08-20
 

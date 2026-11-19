@@ -350,10 +350,12 @@ elif command -v dnf >/dev/null 2>&1; then
   # check-update never reports what's currently installed, so the batched
   # rpm_installed_versions lookup below is what makes `current` true
   # (D-02, spec S4). NF>=3 drops a wrapped two-line check-update entry (a
-  # pre-existing limitation this plan does not change). The LIST filter is the
-  # adapters copy's (D-06): it also drops a `Last metadata expiration` line and
-  # any row whose first field has no dot, so a `replacing` row under
-  # Obsoleting Packages is never counted as an update.
+  # pre-existing limitation this plan does not change). The LIST filter also
+  # drops a `Last metadata expiration` line and any row whose first field has
+  # no dot, and it stops reading at an `Obsoleting Packages` header: every row
+  # under that header (the replacing package and its indented replaced
+  # package) is a replacement, not a pending update, and the replaced row has
+  # a dot and three fields, so a per-row test alone would count it.
   MANAGER="dnf"
   # Capture the exit codes the old pipelines discarded: `check-update` exits 0 with nothing pending, 100 with updates pending, and
   # anything else when it could not run (AlmaLinux 8.10 exits 1 when repo metadata is unreachable). Without this a failed check
@@ -364,7 +366,7 @@ elif command -v dnf >/dev/null 2>&1; then
     0|100) ;;
     *) STATUS=check_failed; CHECK_ERROR=metadata_unavailable ;;
   esac
-  LIST=$(printf '%s\n' "$CHECK_OUT" | awk 'NF>=3 && $1 !~ /^Obsoleting/ && $1 !~ /^Last/ && $1 ~ /\./ {print}' || true)
+  LIST=$(printf '%s\n' "$CHECK_OUT" | awk '/^Obsoleting/ {exit} NF>=3 && $1 !~ /^Last/ && $1 ~ /\./ {print}' || true)
   # Security advisories name their packages as full NEVRA, one row per advisory per package build. If this lookup fails the update
   # list is real but every security flag would silently be false, so a failure here fails the whole check too.
   SEC_OUT=$(dnf -q updateinfo list security --available 2>/dev/null)
@@ -441,13 +443,14 @@ elif command -v yum >/dev/null 2>&1; then
   # Same shape as the dnf branch above, reusing rpm_installed_versions,
   # rpm_installed_version_for, pkgname_is_safe, add_package, json_escape and
   # the shared exact-name rule (security_names, counted once per pending
-  # update over the whole list) rather than duplicating any of them. Every
-  # yum-specific difference from the dnf branch stays intact: its own LIST
-  # filter (no Obsoleting guard), `yum -q updateinfo list security` without
-  # --available, and the bare needs-restarting reboot probe (not
-  # `yum -q needs-restarting`).
+  # update over the whole list) rather than duplicating any of them. The
+  # yum-specific differences from the dnf branch are: `yum -q updateinfo list
+  # security` without --available, and the bare needs-restarting reboot probe
+  # (not `yum -q needs-restarting`). The LIST filter is the same as dnf's: yum
+  # prints the same `Obsoleting Packages` section, whose rows are replacements,
+  # not pending updates, so reading stops at its header.
   MANAGER="yum"
-  LIST=$(yum -q check-update 2>/dev/null | awk 'NF>=3 {print}' || true)
+  LIST=$(yum -q check-update 2>/dev/null | awk '/^Obsoleting/ {exit} NF>=3 && $1 !~ /^Last/ && $1 ~ /\./ {print}' || true)
   # The exact names the advisories name, and the count of pending updates among them: never advisory rows (see the dnf branch).
   SECNAMES=$(yum -q updateinfo list security 2>/dev/null | security_names)
   SEC_COUNT=0
